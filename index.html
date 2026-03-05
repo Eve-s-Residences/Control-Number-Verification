@@ -74,7 +74,10 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
+            transition: opacity 0.2s;
         }
+
+        button:active { opacity: 0.8; }
 
         .btn-verify { background: var(--primary); color: white; }
         .btn-scan { background: var(--dark); color: white; }
@@ -94,10 +97,14 @@
             border-radius: 12px; 
             display: none; 
             line-height: 1.6;
+            animation: fadeIn 0.3s ease;
         }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .valid { background: #e7f4e4; color: #1e4620; border: 1px solid #c3e6cb; }
         .invalid { background: #fdf2f2; color: #721c24; border: 1px solid #f5c2c7; }
+        .searching { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; }
 
         /* Virtual Keyboard */
         #keyboard {
@@ -129,13 +136,13 @@
             font-size: 18px;
             box-shadow: 0 1px 0 rgba(0,0,0,0.2);
             cursor: pointer;
+            user-select: none;
         }
 
         .key:active { background: #adb5bd; }
         .key.special { background: #adb5bd; }
         .key.done { background: var(--primary); color: white; grid-column: span 2; }
 
-        /* Footer */
         footer {
             flex-shrink: 0;
             width: 100%;
@@ -193,7 +200,10 @@
 </div>
 
 <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzbFbeBjIh7U5VVHvyvezoztpX8Voo6w3-5k0HdmZ5xF0xbfB-YwYClgUGKhvMslrWe5w/exec";
+    // BOTH API ENDPOINTS
+    const API_RESERVATION = "https://script.google.com/macros/s/AKfycbzbFbeBjIh7U5VVHvyvezoztpX8Voo6w3-5k0HdmZ5xF0xbfB-YwYClgUGKhvMslrWe5w/exec";
+    const API_RENEWAL = "https://script.google.com/macros/s/AKfycbynrj-Bv-Z2azSrzP8WT-H0XJJruz5vlLnDl3gFk_xeTq_TIODLpeNRZA0CTbCnE3u2/exec";
+    
     const scanner = new Html5Qrcode("reader");
     const input = document.getElementById('hashInput');
     const kb = document.getElementById('keyboard');
@@ -224,13 +234,22 @@
         closeKeyboard();
         const resultDiv = document.getElementById('result');
         resultDiv.style.display = "block";
-        resultDiv.innerHTML = "Searching database...";
-        resultDiv.className = "";
+        resultDiv.className = "searching";
+        resultDiv.innerHTML = "Checking databases...";
 
         try {
-            const response = await fetch(`${API_URL}?hash=${hash}`);
-            const data = await response.json();
+            // STEP 1: Check Reservation Database
+            let response = await fetch(`${API_RESERVATION}?hash=${hash}`);
+            let data = await response.json();
 
+            // STEP 2: If not found, Check Renewal Database
+            if (!data.valid) {
+                resultDiv.innerHTML = "Checking Renewal records...";
+                response = await fetch(`${API_RENEWAL}?hash=${hash}`);
+                data = await response.json();
+            }
+
+            // FINAL RESULT
             if (data.valid) {
                 resultDiv.className = "valid";
                 resultDiv.innerHTML = `
@@ -240,10 +259,12 @@
                     Property: ${data.property}`;
             } else {
                 resultDiv.className = "invalid";
-                resultDiv.innerHTML = "<strong>❌ NOT FOUND</strong><br>Code invalid or expired.";
+                resultDiv.innerHTML = "<strong>❌ NOT FOUND</strong><br>Code invalid or expired in both databases.";
             }
         } catch (err) {
+            resultDiv.className = "invalid";
             resultDiv.innerHTML = "⚠️ Server connection error.";
+            console.error(err);
         }
     }
 
