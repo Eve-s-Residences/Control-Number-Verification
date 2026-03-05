@@ -9,8 +9,6 @@
         :root {
             --primary: #007bff;
             --dark: #343a40;
-            --success: #28a745;
-            --error: #dc3545;
             --bg: #f8f9fa;
             --footer-text: #6c757d;
         }
@@ -31,9 +29,6 @@
             max-width: 450px;
             padding: 20px;
             box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
         }
 
         .card { 
@@ -57,10 +52,7 @@
             text-align: center;
             text-transform: uppercase;
             outline: none;
-            background-color: #fff;
         }
-        
-        input:focus { border-color: var(--primary); }
 
         .btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 
@@ -76,21 +68,20 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
-            transition: opacity 0.2s;
         }
-
-        button:active { opacity: 0.8; }
 
         .btn-verify { background: var(--primary); color: white; }
         .btn-scan { background: var(--dark); color: white; }
 
+        /* IMPROVED SCANNER STYLING */
         #reader { 
             width: 100%; 
             margin-top: 15px; 
             display: none; 
             border-radius: 12px; 
             overflow: hidden;
-            border: 2px solid var(--dark);
+            border: 3px solid var(--primary);
+            background: #000;
         }
 
         #result { 
@@ -99,10 +90,7 @@
             border-radius: 12px; 
             display: none; 
             line-height: 1.6;
-            animation: fadeIn 0.3s ease;
         }
-
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .valid { background: #e7f4e4; color: #1e4620; border: 1px solid #c3e6cb; }
         .invalid { background: #fdf2f2; color: #721c24; border: 1px solid #f5c2c7; }
@@ -117,12 +105,10 @@
             background: #d1d4d9;
             padding: 10px 0 30px 0;
             transition: bottom 0.3s ease;
-            box-shadow: 0 -5px 15px rgba(0,0,0,0.1);
             display: grid;
             grid-template-columns: repeat(6, 1fr);
             gap: 6px;
-            padding-left: 6px;
-            padding-right: 6px;
+            padding-inline: 6px;
             box-sizing: border-box;
             z-index: 1000;
         }
@@ -136,23 +122,19 @@
             text-align: center;
             font-weight: bold;
             font-size: 18px;
-            box-shadow: 0 1px 0 rgba(0,0,0,0.2);
             cursor: pointer;
             user-select: none;
         }
 
         .key:active { background: #adb5bd; }
-        .key.special { background: #adb5bd; }
         .key.done { background: var(--primary); color: white; grid-column: span 2; }
 
         footer {
-            flex-shrink: 0;
             width: 100%;
             padding: 20px 0;
             text-align: center;
             font-size: 12px;
             color: var(--footer-text);
-            line-height: 1.5;
         }
     </style>
 </head>
@@ -167,7 +149,7 @@
         
         <div class="btn-group">
             <button class="btn-verify" onclick="callApi()">Verify Code</button>
-            <button class="btn-scan" onclick="toggleScanner()">📷 Scan Barcode</button>
+            <button class="btn-scan" id="scanBtn" onclick="toggleScanner()">📷 Open Scanner</button>
         </div>
         
         <div id="reader"></div>
@@ -197,7 +179,7 @@
     <div class="key" onclick="press('D')">D</div>
     <div class="key" onclick="press('E')">E</div>
     <div class="key" onclick="press('F')">F</div>
-    <div class="key special" onclick="press('back')">⌫</div>
+    <div class="key" onclick="press('back')">⌫</div>
     <div class="key done" onclick="closeKeyboard()">DONE</div>
 </div>
 
@@ -205,29 +187,13 @@
     const API_RESERVATION = "https://script.google.com/macros/s/AKfycbzbFbeBjIh7U5VVHvyvezoztpX8Voo6w3-5k0HdmZ5xF0xbfB-YwYClgUGKhvMslrWe5w/exec";
     const API_RENEWAL = "https://script.google.com/macros/s/AKfycbx9-8yCnVZM5nEEIYwBNyIEGl-mClnV84aS5ACw4tMdAT5LnO11mc5BJMCdZ5qGRQIf/exec";
     
-    const scanner = new Html5Qrcode("reader");
+    // Global Scanner Config
+    let scanner = null;
     const input = document.getElementById('hashInput');
     const kb = document.getElementById('keyboard');
 
-    // On mobile, show custom keyboard. On PC, just let them type/paste.
-    input.addEventListener('click', (e) => {
-        if (window.innerWidth < 768) {
-            kb.classList.add('open');
-        }
-    });
-
-    document.addEventListener('click', (e) => {
-        if(!kb.contains(e.target) && e.target !== input) closeKeyboard();
-    });
-
-    function press(key) {
-        if (key === 'back') {
-            input.value = input.value.slice(0, -1);
-        } else {
-            if(input.value.length < 16) input.value += key;
-        }
-    }
-
+    input.addEventListener('click', () => { if (window.innerWidth < 768) kb.classList.add('open'); });
+    function press(key) { if (key === 'back') { input.value = input.value.slice(0, -1); } else { if(input.value.length < 16) input.value += key; } }
     function closeKeyboard() { kb.classList.remove('open'); }
 
     async function callApi(code) {
@@ -238,56 +204,67 @@
         const resultDiv = document.getElementById('result');
         resultDiv.style.display = "block";
         resultDiv.className = "searching";
-        resultDiv.innerHTML = "Checking databases...";
+        resultDiv.innerHTML = "Searching...";
 
         try {
-            // STEP 1: Check Reservation Database
             let response = await fetch(`${API_RESERVATION}?hash=${hash}`);
             let data = await response.json();
 
-            // STEP 2: If not found, Check Renewal Database
             if (!data.valid) {
-                resultDiv.innerHTML = "Checking Renewal records...";
                 response = await fetch(`${API_RENEWAL}?hash=${hash}`);
                 data = await response.json();
             }
 
-            // FINAL RESULT
             if (data.valid) {
                 resultDiv.className = "valid";
-                resultDiv.innerHTML = `
-                    <strong>✅ VERIFIED</strong><br>
-                    Tenant: ${data.name}<br>
-                    Unit: ${data.unit}<br>
-                    Property: ${data.property}`;
+                resultDiv.innerHTML = `<strong>✅ VERIFIED</strong><br>Tenant: ${data.name}<br>Unit: ${data.unit}<br>Property: ${data.property}`;
             } else {
                 resultDiv.className = "invalid";
-                resultDiv.innerHTML = "<strong>❌ NOT FOUND</strong><br>Code invalid or expired in both databases.";
+                resultDiv.innerHTML = "<strong>❌ NOT FOUND</strong><br>Invalid or expired code.";
             }
         } catch (err) {
             resultDiv.className = "invalid";
-            resultDiv.innerHTML = "⚠️ Server connection error.";
-            console.error(err);
+            resultDiv.innerHTML = "⚠️ Connection Error.";
         }
     }
 
     function toggleScanner() {
-        const reader = document.getElementById('reader');
-        if (reader.style.display === "block") {
-            scanner.stop();
-            reader.style.display = "none";
+        const readerDiv = document.getElementById('reader');
+        const btn = document.getElementById('scanBtn');
+
+        if (scanner) {
+            scanner.stop().then(() => {
+                scanner = null;
+                readerDiv.style.display = "none";
+                btn.innerHTML = "📷 Open Scanner";
+                btn.style.background = "var(--dark)";
+            });
         } else {
             closeKeyboard();
-            reader.style.display = "block";
+            readerDiv.style.display = "block";
+            btn.innerHTML = "🛑 Stop Scanner";
+            btn.style.background = "#dc3545";
+
+            scanner = new Html5Qrcode("reader");
+            const config = { 
+                fps: 20, 
+                qrbox: { width: 300, height: 150 }, // Optimized for rectangle barcodes
+                aspectRatio: 1.0 
+            };
+
             scanner.start(
                 { facingMode: "environment" }, 
-                { fps: 15, qrbox: {width: 280, height: 130} }, 
+                config, 
                 (text) => {
+                    input.value = text;
                     callApi(text);
-                    scanner.stop();
-                    reader.style.display = "none";
+                    toggleScanner(); // Auto-close on success
                 }
-            ).catch(err => console.error(err));
+            ).catch(err => {
+                console.error(err);
+                alert("Camera access denied or not found.");
+                toggleScanner();
+            });
         }
     }
 </script>
