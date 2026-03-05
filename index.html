@@ -59,6 +59,8 @@
             outline: none;
             background-color: #fff;
         }
+        
+        input:focus { border-color: var(--primary); }
 
         .btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 
@@ -161,7 +163,7 @@
         <img src="https://img.icons8.com/fluency/96/verified-badge.png" alt="Logo" width="50">
         <h2>Tenant Verification</h2>
         
-        <input type="text" id="hashInput" placeholder="CLICK TO ENTER CODE" readonly>
+        <input type="text" id="hashInput" placeholder="ENTER OR PASTE CODE">
         
         <div class="btn-group">
             <button class="btn-verify" onclick="callApi()">Verify Code</button>
@@ -200,7 +202,6 @@
 </div>
 
 <script>
-    // BOTH API ENDPOINTS
     const API_RESERVATION = "https://script.google.com/macros/s/AKfycbzbFbeBjIh7U5VVHvyvezoztpX8Voo6w3-5k0HdmZ5xF0xbfB-YwYClgUGKhvMslrWe5w/exec";
     const API_RENEWAL = "https://script.google.com/macros/s/AKfycbx9-8yCnVZM5nEEIYwBNyIEGl-mClnV84aS5ACw4tMdAT5LnO11mc5BJMCdZ5qGRQIf/exec";
     
@@ -208,9 +209,11 @@
     const input = document.getElementById('hashInput');
     const kb = document.getElementById('keyboard');
 
+    // On mobile, show custom keyboard. On PC, just let them type/paste.
     input.addEventListener('click', (e) => {
-        kb.classList.add('open');
-        e.stopPropagation();
+        if (window.innerWidth < 768) {
+            kb.classList.add('open');
+        }
     });
 
     document.addEventListener('click', (e) => {
@@ -228,7 +231,7 @@
     function closeKeyboard() { kb.classList.remove('open'); }
 
     async function callApi(code) {
-        const hash = code || input.value;
+        const hash = (code || input.value).trim().toUpperCase();
         if(!hash) return;
         
         closeKeyboard();
