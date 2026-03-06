@@ -9,6 +9,8 @@
         :root {
             --primary: #007bff;
             --dark: #343a40;
+            --success: #28a745;
+            --danger: #dc3545;
             --bg: #f8f9fa;
             --footer-text: #6c757d;
         }
@@ -39,7 +41,10 @@
             text-align: center; 
         }
 
-        h2 { color: var(--dark); margin-bottom: 20px; font-size: 1.5rem; }
+        .logo-container { margin-bottom: 10px; }
+        
+        h2 { color: var(--dark); margin-bottom: 5px; font-size: 1.5rem; }
+        p.subtitle { color: var(--footer-text); margin-bottom: 25px; font-size: 0.9rem; }
 
         input { 
             width: 100%; 
@@ -49,10 +54,14 @@
             border-radius: 10px; 
             box-sizing: border-box; 
             font-size: 18px;
+            font-weight: bold;
             text-align: center;
             text-transform: uppercase;
             outline: none;
+            transition: border-color 0.3s;
         }
+
+        input:focus { border-color: var(--primary); }
 
         .btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 
@@ -68,12 +77,14 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
+            transition: opacity 0.2s;
         }
+
+        button:active { opacity: 0.8; }
 
         .btn-verify { background: var(--primary); color: white; }
         .btn-scan { background: var(--dark); color: white; }
 
-        /* IMPROVED SCANNER STYLING */
         #reader { 
             width: 100%; 
             margin-top: 15px; 
@@ -90,13 +101,16 @@
             border-radius: 12px; 
             display: none; 
             line-height: 1.6;
+            text-align: left;
+            animation: fadeIn 0.3s ease-in;
         }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
         .valid { background: #e7f4e4; color: #1e4620; border: 1px solid #c3e6cb; }
         .invalid { background: #fdf2f2; color: #721c24; border: 1px solid #f5c2c7; }
         .searching { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; }
 
-        /* Virtual Keyboard */
         #keyboard {
             position: fixed;
             bottom: -100%;
@@ -104,7 +118,7 @@
             width: 100%;
             background: #d1d4d9;
             padding: 10px 0 30px 0;
-            transition: bottom 0.3s ease;
+            transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: grid;
             grid-template-columns: repeat(6, 1fr);
             gap: 6px;
@@ -122,12 +136,13 @@
             text-align: center;
             font-weight: bold;
             font-size: 18px;
+            box-shadow: 0 1px 0 rgba(0,0,0,0.2);
             cursor: pointer;
-            user-select: none;
         }
 
         .key:active { background: #adb5bd; }
-        .key.done { background: var(--primary); color: white; grid-column: span 2; }
+        .key.done { background: var(--success); color: white; grid-column: span 2; }
+        .key.back { background: #aeb3ba; }
 
         footer {
             width: 100%;
@@ -142,14 +157,17 @@
 
 <div class="main-content">
     <div class="card">
-        <img src="https://img.icons8.com/fluency/96/verified-badge.png" alt="Logo" width="50">
-        <h2>Tenant Verification</h2>
+        <div class="logo-container">
+            <img src="https://img.icons8.com/fluency/96/verified-badge.png" alt="Logo" width="60">
+        </div>
+        <h2>Verification Portal</h2>
+        <p class="subtitle">Eve's Residences Property Management</p>
         
-        <input type="text" id="hashInput" placeholder="ENTER OR PASTE CODE">
+        <input type="text" id="hashInput" placeholder="ENTER OR SCAN CODE" readonly>
         
         <div class="btn-group">
-            <button class="btn-verify" onclick="callApi()">Verify Code</button>
-            <button class="btn-scan" id="scanBtn" onclick="toggleScanner()">📷 Open Scanner</button>
+            <button class="btn-verify" id="verifyBtn" onclick="callApi()">Verify Now</button>
+            <button class="btn-scan" id="scanBtn" onclick="toggleScanner()">📷 Open Camera</button>
         </div>
         
         <div id="reader"></div>
@@ -179,52 +197,86 @@
     <div class="key" onclick="press('D')">D</div>
     <div class="key" onclick="press('E')">E</div>
     <div class="key" onclick="press('F')">F</div>
-    <div class="key" onclick="press('back')">⌫</div>
-    <div class="key done" onclick="closeKeyboard()">DONE</div>
+    <div class="key back" onclick="press('back')">⌫</div>
+    <div class="key done" onclick="closeKeyboard()">VERIFY</div>
 </div>
 
 <script>
+    // Replace these with your actual Web App URLs from your Google Apps Script Deployment
     const API_RESERVATION = "https://script.google.com/macros/s/AKfycbxNfr5IOQNATSszwCp-9I2QJ4lQtASBxI_s2ia8zEiYxKAI3tg0_c3pnsT_7K-kDkPF_A/exec";
     const API_RENEWAL = "https://script.google.com/macros/s/AKfycbx9-8yCnVZM5nEEIYwBNyIEGl-mClnV84aS5ACw4tMdAT5LnO11mc5BJMCdZ5qGRQIf/exec";
     
-    // Global Scanner Config
-    let scanner = null;
+    let html5QrCode = null;
     const input = document.getElementById('hashInput');
     const kb = document.getElementById('keyboard');
+    const resultDiv = document.getElementById('result');
 
-    input.addEventListener('click', () => { if (window.innerWidth < 768) kb.classList.add('open'); });
-    function press(key) { if (key === 'back') { input.value = input.value.slice(0, -1); } else { if(input.value.length < 16) input.value += key; } }
-    function closeKeyboard() { kb.classList.remove('open'); }
+    input.addEventListener('click', () => { 
+        if (window.innerWidth < 768) {
+            kb.classList.add('open');
+            resultDiv.style.display = "none";
+        } 
+    });
 
-    async function callApi(code) {
-        const hash = (code || input.value).trim().toUpperCase();
+    function press(key) { 
+        if (key === 'back') { 
+            input.value = input.value.slice(0, -1); 
+        } else { 
+            if(input.value.length < 12) input.value += key; 
+        } 
+    }
+
+    function closeKeyboard() { 
+        kb.classList.remove('open'); 
+        if(input.value.length >= 6) callApi();
+    }
+
+    async function callApi(scannedCode) {
+        const hash = (scannedCode || input.value).trim().toUpperCase();
         if(!hash) return;
         
-        closeKeyboard();
-        const resultDiv = document.getElementById('result');
+        kb.classList.remove('open');
         resultDiv.style.display = "block";
         resultDiv.className = "searching";
-        resultDiv.innerHTML = "Searching...";
+        resultDiv.innerHTML = "<strong>🔍 Searching Systems...</strong><br>Checking security records.";
 
         try {
+            // Step 1: Check Reservations
             let response = await fetch(`${API_RESERVATION}?hash=${hash}`);
             let data = await response.json();
 
+            // Step 2: Fallback to Renewals if not found
             if (!data.valid) {
+                resultDiv.innerHTML = "<strong>🔍 Not in Reservations...</strong><br>Checking Renewals.";
                 response = await fetch(`${API_RENEWAL}?hash=${hash}`);
                 data = await response.json();
             }
 
             if (data.valid) {
                 resultDiv.className = "valid";
-                resultDiv.innerHTML = `<strong>✅ VERIFIED</strong><br>Tenant: ${data.name}<br>Unit: ${data.unit}<br>Property: ${data.property}`;
+                resultDiv.innerHTML = `
+                    <div style="text-align: center; margin-bottom: 10px;">
+                        <img src="https://img.icons8.com/color/48/checked--v1.png"/>
+                    </div>
+                    <strong>✅ IDENTITY VERIFIED</strong><br>
+                    <hr style="border: 0; border-top: 1px solid #c3e6cb; margin: 10px 0;">
+                    <b>Tenant:</b> ${data.name}<br>
+                    <b>Unit:</b> ${data.unit}<br>
+                    <b>Property:</b> ${data.property}
+                `;
             } else {
                 resultDiv.className = "invalid";
-                resultDiv.innerHTML = "<strong>❌ NOT FOUND</strong><br>Invalid or expired code.";
+                resultDiv.innerHTML = `
+                    <div style="text-align: center; margin-bottom: 10px;">
+                        <img src="https://img.icons8.com/color/48/cancel--v1.png"/>
+                    </div>
+                    <strong>❌ ACCESS DENIED</strong><br>
+                    The code provided is either invalid, expired, or not yet synced.
+                `;
             }
         } catch (err) {
             resultDiv.className = "invalid";
-            resultDiv.innerHTML = "⚠️ Connection Error.";
+            resultDiv.innerHTML = "<strong>⚠️ CONNECTION ERROR</strong><br>Please check your internet signal.";
         }
     }
 
@@ -232,38 +284,42 @@
         const readerDiv = document.getElementById('reader');
         const btn = document.getElementById('scanBtn');
 
-        if (scanner) {
-            scanner.stop().then(() => {
-                scanner = null;
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
                 readerDiv.style.display = "none";
-                btn.innerHTML = "📷 Open Scanner";
+                btn.innerHTML = "📷 Open Camera";
                 btn.style.background = "var(--dark)";
             });
         } else {
-            closeKeyboard();
+            kb.classList.remove('open');
             readerDiv.style.display = "block";
-            btn.innerHTML = "🛑 Stop Scanner";
-            btn.style.background = "#dc3545";
+            btn.innerHTML = "🛑 Stop Camera";
+            btn.style.background = "var(--danger)";
 
-            scanner = new Html5Qrcode("reader");
+            html5QrCode = new Html5Qrcode("reader");
             const config = { 
-                fps: 20, 
-                qrbox: { width: 300, height: 150 }, // Optimized for rectangle barcodes
+                fps: 15, 
+                qrbox: { width: 300, height: 120 }, // Optimized for rectangle barcodes
                 aspectRatio: 1.0 
             };
 
-            scanner.start(
+            html5QrCode.start(
                 { facingMode: "environment" }, 
                 config, 
                 (text) => {
                     input.value = text;
-                    callApi(text);
-                    toggleScanner(); // Auto-close on success
+                    html5QrCode.stop().then(() => {
+                        readerDiv.style.display = "none";
+                        btn.innerHTML = "📷 Open Camera";
+                        btn.style.background = "var(--dark)";
+                        callApi(text);
+                    });
                 }
             ).catch(err => {
-                console.error(err);
-                alert("Camera access denied or not found.");
-                toggleScanner();
+                alert("Camera Error: Please ensure you have granted camera permissions.");
+                readerDiv.style.display = "none";
+                btn.innerHTML = "📷 Open Camera";
+                btn.style.background = "var(--dark)";
             });
         }
     }
